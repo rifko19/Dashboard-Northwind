@@ -1,0 +1,29 @@
+SELECT
+            dc.company_name,
+            SUM(fs.revenue) AS total_purchase_value
+        FROM fact_sales fs
+        JOIN dim_customer dc ON fs.customer_key = dc.customer_key
+        GROUP BY 1
+        ORDER BY total_purchase_value desc;
+
+SELECT
+    dd.year AS tahun,
+    dd.quarter AS kuartal,
+    dc.company_name AS pelanggan,
+    COUNT(DISTINCT fs.order_id) AS jumlah_order,
+    SUM(fs.revenue) AS total_revenue_kuartal
+FROM
+    fact_sales fs
+JOIN
+    dim_customer dc ON fs.customer_key = dc.customer_key
+JOIN
+    dim_date dd ON fs.date_key = dd.date_key
+GROUP BY
+    dd.year,
+    dd.quarter,
+    dc.company_name
+ORDER BY
+    dd.year,
+    dd.quarter,
+    jumlah_order desc
+limit 20;
