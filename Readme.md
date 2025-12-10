@@ -1,128 +1,103 @@
 🚀 Northwind Strategic Dashboard
-Dashboard Business Intelligence interaktif berbasis Streamlit untuk menganalisis kinerja perusahaan Northwind. Dashboard ini mencakup analisis Strategi Keuangan, Geografi Pasar, Segmentasi Pelanggan (RFM Analysis), dan Efisiensi Produk yang terhubung langsung dengan PostgreSQL Data Warehouse.
+Northwind Strategic Dashboard adalah sistem Business Intelligence berbasis Streamlit untuk menganalisis kinerja strategis perusahaan Northwind. Dashboard ini memvisualisasikan data dari PostgreSQL Data Warehouse yang dirancang menggunakan Star Schema.
 
-📋 Daftar Isi
-Prasyarat Sistem
+Dashboard ini mencakup analisis:
 
-Struktur Proyek
+📈 Strategi Keuangan (Tren Pendapatan & Kategori)
 
-Migrasi Database (Export & Import)
+🌍 Geografi Pasar (Peta Sebaran Global)
 
-Instalasi & Setup Environment
+💎 Loyalitas Pelanggan (RFM Segmentation & Retention)
 
-Konfigurasi .env
+📦 Efisiensi Produk (Profitabilitas Item)
 
-Menjalankan Dashboard
+💻 Prasyarat
+Pastikan perangkat Anda sudah terinstal:
 
-💻 Prasyarat Sistem
-Sebelum memulai, pastikan perangkat target sudah terinstal:
+Python (v3.8+)
 
-DBeaver (Opsional, untuk manajemen database visual)
+PostgreSQL (v12+)
 
-Git (Opsional, untuk kloning repository)
+DBeaver / pgAdmin (Opsional, untuk manajemen DB visual)
 
-📂 Struktur Proyek
-Pastikan folder proyek Anda memiliki susunan file seperti ini:
+⚙️ Quick Start (Cara Menjalankan)
+Ikuti 4 langkah ini untuk menjalankan dashboard di perangkat baru.
 
-Plaintext
+1. Import Database
+Tidak perlu menjalankan ETL dari awal. Cukup import file northwind_dw.sql yang sudah tersedia.
 
-northwind-dashboard/
-│
-├── app.py                 # File utama aplikasi Streamlit (Source code dashboard)
-├── .env                   # File konfigurasi kredensial database (JANGAN di-upload ke GitHub)
-├── requirements.txt       # Daftar library Python yang dibutuhkan
-├── northwind_dw.sql       # File backup database (hasil export)
-└── README.md              # Dokumentasi proyek ini
-(Catatan: Jika Anda memisahkan koneksi database, pastikan file db_connection.py ada dalam folder yang sama).
-
-📦 Migrasi Database (Export & Import)
-Agar dashboard berjalan di perangkat baru, Anda harus memindahkan Data Warehouse (PostgreSQL).
-
-Langkah 1: Export Database (Di Laptop Lama/Sumber)
-Jika Anda menggunakan DBeaver atau pgAdmin, Anda bisa klik kanan pada database -> Backup/Export. Jika menggunakan Command Line (CMD/Terminal):
+Cara Import via Terminal:
 
 Bash
 
-# Format: pg_dump -U [username] -h [host] -p [port] -d [nama_database] > [nama_file_keluaran.sql]
-pg_dump -U postgres -h localhost -p 5432 -d northwind_dw > northwind_dw.sql
-File northwind_dw.sql akan muncul di folder Anda. Salin file ini ke laptop baru.
-
-Langkah 2: Import Database (Di Laptop Baru/Target)
-Buka PostgreSQL (via pgAdmin/DBeaver) di laptop baru.
-
-Buat database kosong baru, misal bernama northwind_dw.
-
-Restore/Import file SQL tadi.
-
-Jika menggunakan Command Line:
-
-Bash
-
-# 1. Buat database baru (jika belum ada)
+# 1. Buat database kosong
 createdb -U postgres -h localhost -p 5432 northwind_dw
 
-# 2. Import data dari file SQL
+# 2. Import file SQL
 psql -U postgres -h localhost -p 5432 -d northwind_dw < northwind_dw.sql
-⚙️ Instalasi & Setup Environment
-Buka Terminal (CMD/PowerShell/VS Code Terminal) di dalam folder proyek.
+Cara Import via DBeaver/pgAdmin:
 
-Buat Virtual Environment (Sangat disarankan agar library tidak bentrok):
+Buat database baru bernama northwind_dw.
+
+Klik kanan database tersebut ➝ Tools ➝ Restore.
+
+Pilih file northwind_dw.sql dari folder proyek ini dan jalankan.
+
+2. Setup Python Environment
+Buka terminal di folder proyek, lalu jalankan perintah berikut:
 
 Bash
 
-# Untuk Windows
+# 1. Buat Virtual Environment (Disarankan)
 python -m venv venv
+
+# 2. Aktifkan Environment
+# Windows:
 venv\Scripts\activate
-
-# Untuk Mac/Linux
-python3 -m venv venv
+# Mac/Linux:
 source venv/bin/activate
-Install Library yang Dibutuhkan: Buat file requirements.txt (jika belum ada) dengan isi berikut:
 
-Plaintext
-
-streamlit
-pandas
-sqlalchemy
-psycopg2-binary
-plotly
-matplotlib
-seaborn
-python-dotenv
-fpdf
-Lalu jalankan perintah:
-
-Bash
-
+# 3. Install Library
 pip install -r requirements.txt
-🔑 Konfigurasi .env
-Buat file baru bernama .env di dalam folder proyek. File ini berfungsi menyimpan rahasia koneksi database agar tidak tertulis langsung di dalam kode (app.py).
+3. Konfigurasi .env
+Buat file baru bernama .env di dalam folder proyek. Isi dengan kredensial PostgreSQL Anda:
 
-Isi file .env dengan format berikut (sesuaikan dengan setting PostgreSQL di laptop baru):
+Ini, TOML
 
-Cuplikan kode
-
-# Konfigurasi Database PostgreSQL
 PG_USER=postgres
 PG_PASSWORD=password_postgres_anda
 PG_HOST=localhost
 PG_PORT=5432
 PG_DATABASE=northwind_dw
 PG_SCHEMA=public
-PG_USER: Biasanya postgres (default).
-
-PG_PASSWORD: Password yang Anda buat saat instalasi PostgreSQL.
-
-PG_DATABASE: Nama database yang tadi Anda buat saat proses Import (Langkah 3).
-
-🚀 Menjalankan Dashboard
-Setelah database siap dan library terinstall:
-
-Pastikan virtual environment aktif.
-
-Jalankan perintah berikut di terminal:
+4. Jalankan Dashboard
+Jalankan perintah ini di terminal:
 
 Bash
 
 streamlit run app.py
-Browser akan otomatis terbuka di alamat http://localhost:8501. Dashboard siap digunakan! 🎉
+Dashboard akan otomatis terbuka di browser: http://localhost:8501
+
+🔄 Tentang Proses ETL (Opsional)
+Folder proyek ini menyertakan script ETL (extract.py, transform.py, load.py) yang digunakan untuk memproses data mentah dari folder data/ ke PostgreSQL.
+
+Anda TIDAK PERLU menjalankan ini jika sudah melakukan langkah Import Database di atas.
+
+Namun, jika Anda ingin membangun ulang Data Warehouse dari data mentah CSV:
+
+Pastikan folder data/ berisi file CSV Northwind yang lengkap.
+
+Jalankan perintah: python etl_main.py
+
+Script akan mengekstrak CSV, melakukan transformasi ke Star Schema, dan memuatnya ke database northwind_dw.
+
+🛠️ Tech Stack
+Bahasa: Python
+
+Frontend: Streamlit, Plotly Express
+
+Backend/DW: PostgreSQL, SQLAlchemy
+
+ETL: Pandas (Extract, Transform), Psycopg2 (Load)
+
+Reporting: FPDF (Export PDF), Matplotlib

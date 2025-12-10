@@ -6,6 +6,7 @@ import uuid
 import matplotlib.pyplot as plt
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import seaborn as sns
 import streamlit as st
 from dotenv import load_dotenv
@@ -22,10 +23,7 @@ st.set_page_config(
     page_icon="📊"
 )
 
-# Load environment variables
 load_dotenv()
-
-# Styling matplotlib (untuk PDF)
 sns.set_theme(style="whitegrid")
 
 # ==========================================
@@ -84,7 +82,6 @@ def create_category_filter(selected_categories):
 def get_kpi_data(_engine, kpi_type, selected_year, category_sql=""):
     """Mengambil data metrik KPI."""
     
-    # 1. KPI FINANCE
     if kpi_type == 'financial_trend':
         query = f"""
         SELECT dd.year, dd.month, dd.month_name, 
@@ -99,7 +96,6 @@ def get_kpi_data(_engine, kpi_type, selected_year, category_sql=""):
         ORDER BY dd.year, dd.month;
         """
         
-    # 2. KPI RETENTION
     elif kpi_type == 'retention_rate':
         query = f"""
         WITH customer_monthly AS (
@@ -165,7 +161,6 @@ def get_kpi_data(_engine, kpi_type, selected_year, category_sql=""):
         ORDER BY month;
         """
         
-    # 3. KPI CLV
     elif kpi_type == 'customer_clv':
         query = f"""
         SELECT dc.company_name, 
@@ -182,7 +177,6 @@ def get_kpi_data(_engine, kpi_type, selected_year, category_sql=""):
         ORDER BY monetary_value DESC;
         """
         
-    # 4. KPI PRODUCT
     elif kpi_type == 'product_performance':
         query = f"""
         SELECT dp.product_name, dp.category_name, 
@@ -198,7 +192,6 @@ def get_kpi_data(_engine, kpi_type, selected_year, category_sql=""):
         LIMIT 20;
         """
         
-    # 5. KPI CATEGORY
     elif kpi_type == 'category_performance':
         query = f"""
         SELECT dp.category_name, 
@@ -212,9 +205,7 @@ def get_kpi_data(_engine, kpi_type, selected_year, category_sql=""):
         ORDER BY total_revenue DESC;
         """
 
-    # 6. KPI GEOGRAPHIC (BARU)
     elif kpi_type == 'geo_performance':
-        # Asumsi: kolom country ada di dim_customer
         query = f"""
         SELECT dc.country, 
                SUM(fs.revenue) AS total_revenue,
@@ -255,11 +246,89 @@ def get_kpi_data(_engine, kpi_type, selected_year, category_sql=""):
         return pd.DataFrame()
 
 # ==========================================
-# 4. MODUL INSIGHTS & PDF
+# 4. FUNGSI TARGET & CHART HELPER
+# ==========================================
+
+def calculate_achievement(actual, target):
+    if target == 0: return 0
+    return round((actual / target) * 100, 1)
+
+def create_revenue_comparison_chart(df_trend, monthly_target):
+    df_trend['target'] = monthly_target
+    
+    fig = go.Figure()
+    
+    # Bar Actual Revenue
+    fig.add_trace(go.Bar(
+        x=df_trend['month_name'],
+        y=df_trend['total_revenue'],
+        name='Actual Revenue',
+        marker_color='#1f77b4',
+        text=df_trend['total_revenue'].apply(lambda x: f'${x:,.0f}'),
+        textposition='outside'
+    ))
+    
+    # Line Target
+    fig.add_trace(go.Scatter(
+        x=df_trend['month_name'],
+        y=df_trend['target'],
+        name='Target',
+        mode='lines+markers',
+        line=dict(color='red', width=3, dash='dash'),
+        marker=dict(size=8)
+    ))
+    
+    fig.update_layout(
+        title='Revenue: Actual vs Target',
+        xaxis_title='Month',
+        yaxis_title='Revenue ($)',
+        hovermode='x unified',
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+    )
+    
+    return fig
+
+def create_retention_comparison_chart(df_retention, target_retention):
+    df_retention['target'] = target_retention
+    df_retention['gap'] = df_retention['retention_rate'] - target_retention
+    
+    fig = go.Figure()
+    
+    # Area Actual Retention
+    fig.add_trace(go.Scatter(
+        x=df_retention['month'],
+        y=df_retention['retention_rate'],
+        name='Actual Retention',
+        fill='tozeroy',
+        mode='lines+markers',
+        line=dict(color='#2ecc71', width=3),
+        marker=dict(size=8)
+    ))
+    
+    # Line Target
+    fig.add_trace(go.Scatter(
+        x=df_retention['month'],
+        y=df_retention['target'],
+        name='Target Retention',
+        mode='lines',
+        line=dict(color='red', width=3, dash='dash')
+    ))
+    
+    fig.update_layout(
+        title='Retention Rate: Actual vs Target',
+        xaxis_title='Month',
+        yaxis_title='Retention Rate (%)',
+        hovermode='x unified',
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+    )
+    
+    return fig, df_retention
+
+# ==========================================
+# 5. MODUL INSIGHTS & RFM
 # ==========================================
 
 def generate_smart_insights(df_trend, df_retention, df_prod):
-    """Insight Generator"""
     insights = {
         "finance": None,
         "customer": None,
@@ -285,13 +354,13 @@ def generate_smart_insights(df_trend, df_retention, df_prod):
         
         if avg_retention > 70 and avg_growth > 0:
             status = "success"
-            detail = f"Retention Kuat ({avg_retention:.1f}%) & Growth Positif ({avg_growth:.1f}%)"
+            detail = f"Retention Kuat ({avg_retention:.1f}%)"
         elif avg_retention > 50:
             status = "info"
-            detail = f"Retention Sedang ({avg_retention:.1f}%) | Churn: {avg_churn:.1f}%"
+            detail = f"Retention Sedang ({avg_retention:.1f}%)"
         else:
             status = "error"
-            detail = f"Retention Rendah ({avg_retention:.1f}%) | Churn Tinggi: {avg_churn:.1f}%"
+            detail = f"Retention Rendah ({avg_retention:.1f}%)"
         
         insights['customer'] = {
             "title": "Kesehatan Pelanggan",
@@ -313,7 +382,6 @@ def generate_smart_insights(df_trend, df_retention, df_prod):
 
     return insights
 
-
 def process_rfm_segmentation(df_rfm, analysis_date):
     if df_rfm.empty:
         return df_rfm
@@ -321,30 +389,30 @@ def process_rfm_segmentation(df_rfm, analysis_date):
     df_rfm['last_order_date'] = pd.to_datetime(df_rfm['last_order_date'])
     df_rfm['recency'] = (analysis_date - df_rfm['last_order_date']).dt.days
     
-    # Scoring 1-5
     df_rfm['R_Score'] = pd.qcut(df_rfm['recency'].rank(method='first'), q=5, labels=[5, 4, 3, 2, 1])
     df_rfm['F_Score'] = pd.qcut(df_rfm['frequency'].rank(method='first'), q=5, labels=[1, 2, 3, 4, 5])
     
-    # Mapping ke 5 Segmen Utama
     seg_map = {
-        r'[1-2][1-2]': 'Lost',            # Sudah lama pergi, jarang beli
-        r'[1-2][3-5]': 'At Risk',         # Dulu sering beli, sekarang menghilang
-        r'[3-4]1':     'New Customers',   # Baru beli sekali/dua kali
-        r'51':         'New Customers',   # Baru banget beli
-        r'[3-4][2-3]': 'Potential',       # Rajin tapi belum "Wow"
-        r'[3-4][4-5]': 'Loyal Customers', # Konsisten
-        r'5[2-3]':     'Loyal Customers', # Konsisten & Baru beli
-        r'5[4-5]':     'Champions'        # Terbaik (Baru beli & Sering banget)
+        r'[1-2][1-2]': 'Lost',
+        r'[1-2][3-5]': 'At Risk',
+        r'[3-4]1': 'New Customers',
+        r'51': 'New Customers',
+        r'[3-4][2-3]': 'Potential',
+        r'[3-4][4-5]': 'Loyal Customers',
+        r'5[2-3]': 'Loyal Customers',
+        r'5[4-5]': 'Champions'
     }
     
     df_rfm['Segment'] = (df_rfm['R_Score'].astype(str) + df_rfm['F_Score'].astype(str)).replace(seg_map, regex=True)
     
-    # Fallback safety net
     valid_segments = ['Champions', 'Loyal Customers', 'Potential', 'New Customers', 'At Risk', 'Lost']
     df_rfm.loc[~df_rfm['Segment'].isin(valid_segments), 'Segment'] = 'Potential'
     
     return df_rfm
 
+# ==========================================
+# 6. PDF GENERATION LOGIC (UPDATED WITH TARGETS)
+# ==========================================
 
 class PDFReport(FPDF):
     def header(self):
@@ -411,7 +479,7 @@ def save_plot_to_image(fig):
         fig.savefig(tmpfile.name, bbox_inches='tight', dpi=100)
         return tmpfile.name
 
-def generate_pdf(data_dict, year_label):
+def generate_pdf(data_dict, year_label, rev_target, ret_target):
     pdf = PDFReport()
     pdf.set_auto_page_break(auto=True, margin=15)
     
@@ -420,7 +488,7 @@ def generate_pdf(data_dict, year_label):
     df_prod = data_dict.get('product', pd.DataFrame())
     df_clv = data_dict.get('clv', pd.DataFrame())
 
-    # HALAMAN 1
+    # HALAMAN 1: Header
     pdf.add_page()
     pdf.set_font('Arial', 'B', 20)
     pdf.cell(0, 15, f'Laporan Strategis Northwind: {year_label}', 0, 1, 'C')
@@ -435,7 +503,7 @@ def generate_pdf(data_dict, year_label):
     top_prod_name = df_prod.iloc[0]['product_name'] if not df_prod.empty else "-"
     if len(top_prod_name) > 15: top_prod_name = top_prod_name[:12] + "..."
 
-    # Layout PDF Manual
+    # Scorecards
     pdf.add_metric_box("Total Revenue", f"${total_rev:,.0f}", 15, start_y)
     pdf.add_metric_box("Avg Retention", f"{avg_ret:.1f}%", 65, start_y)
     pdf.add_metric_box("Top Product", top_prod_name, 115, start_y)
@@ -443,35 +511,65 @@ def generate_pdf(data_dict, year_label):
     
     pdf.set_y(start_y + 35)
 
-    # 1. KEUANGAN
-    pdf.chapter_title('1. Analisis Keuangan')
+    # 1. KEUANGAN (Revenue vs Target)
+    pdf.chapter_title('1. Pencapaian Target Keuangan')
     if not df_fin.empty:
-        pdf.chapter_body(f"Total pendapatan tahun ini mencapai ${total_rev:,.0f}. Grafik di bawah menunjukkan tren bulanan.")
+        pdf.chapter_body(f"Total revenue tahun ini mencapai ${total_rev:,.0f} dengan target bulanan ${rev_target:,.0f}.")
         
+        # CHART: Revenue Bar + Target Line (Matplotlib)
         plt.figure(figsize=(10, 4))
-        sns.lineplot(data=df_fin, x='month_name', y='total_revenue', marker='o', linewidth=2.5, color='#1f77b4')
-        plt.title(f'Tren Pendapatan Bulanan - {year_label}')
+        sns.barplot(data=df_fin, x='month_name', y='total_revenue', color='#1f77b4', label='Actual')
+        plt.axhline(y=rev_target, color='red', linestyle='--', linewidth=2, label=f'Target (${rev_target:,.0f})')
+        plt.title(f'Monthly Revenue vs Target ({year_label})')
         plt.ylabel('Revenue ($)')
         plt.xlabel('')
-        plt.grid(True, linestyle='--', alpha=0.7)
+        plt.legend()
+        plt.grid(axis='y', linestyle='--', alpha=0.5)
         plt.xticks(rotation=45)
         
         img_path = save_plot_to_image(plt.gcf())
         pdf.image(img_path, x=10, w=190)
         plt.close()
         os.unlink(img_path)
+        
+        pdf.ln(5)
+        
+        # TABLE: Revenue Summary
+        pdf.set_font('Arial', 'B', 12)
+        pdf.cell(0, 10, 'Rincian Pencapaian Revenue Bulanan', 0, 1)
+        
+        # Prepare table data
+        df_fin['Target'] = rev_target
+        df_fin['Achv'] = (df_fin['total_revenue'] / rev_target) * 100
+        
+        table_data = df_fin[['month_name', 'total_revenue', 'Target', 'Achv']].copy()
+        # Formatting data for PDF table
+        table_data['total_revenue'] = table_data['total_revenue'].apply(lambda x: f"${x:,.0f}")
+        table_data['Target'] = table_data['Target'].apply(lambda x: f"${x:,.0f}")
+        table_data['Achv'] = table_data['Achv'].apply(lambda x: f"{x:.1f}%")
+        
+        pdf.create_table(
+            table_data, 
+            col_widths=[50, 45, 45, 40], 
+            col_names=['Bulan', 'Actual', 'Target', 'Achievement']
+        )
     else:
         pdf.chapter_body("Data keuangan tidak tersedia.")
 
-    # 2. CUSTOMER
+    # 2. CUSTOMER (Retention vs Target)
     pdf.add_page()
-    pdf.chapter_title('2. Kesehatan & Retensi Pelanggan')
+    pdf.chapter_title('2. Target Retensi Pelanggan')
     
     if not df_cust.empty:
+        pdf.chapter_body(f"Rata-rata retensi adalah {avg_ret:.1f}% dibandingkan target {ret_target}%.")
+
+        # CHART: Retention Line + Target Line
         plt.figure(figsize=(10, 4))
-        plt.plot(df_cust['month'], df_cust['retention_rate'], label='Retention %', color='green', marker='o')
-        plt.plot(df_cust['month'], df_cust['churn_rate'], label='Churn %', color='red', marker='x')
-        plt.title('Retention vs Churn Rate')
+        plt.plot(df_cust['month'], df_cust['retention_rate'], marker='o', color='green', linewidth=2, label='Actual %')
+        plt.axhline(y=ret_target, color='red', linestyle='--', linewidth=2, label=f'Target ({ret_target}%)')
+        plt.title('Monthly Retention Rate vs Target')
+        plt.ylim(0, 150)
+        plt.ylabel('Retention Rate (%)')
         plt.legend()
         plt.grid(True, alpha=0.5)
         
@@ -481,56 +579,60 @@ def generate_pdf(data_dict, year_label):
         os.unlink(img_path)
         pdf.ln(5)
 
-    pdf.set_font('Arial', 'B', 12)
-    pdf.cell(0, 10, 'Top 5 Pelanggan Berdasarkan Nilai Transaksi', 0, 1)
-    
+        # TABLE: Retention Summary
+        pdf.set_font('Arial', 'B', 12)
+        pdf.cell(0, 10, 'Analisis Gap Retensi', 0, 1)
+        
+        df_cust['Target_Ret'] = ret_target
+        df_cust['Gap'] = df_cust['retention_rate'] - ret_target
+        
+        table_data_cust = df_cust[['month', 'retention_rate', 'Target_Ret', 'Gap']].copy()
+        table_data_cust['retention_rate'] = table_data_cust['retention_rate'].apply(lambda x: f"{x:.1f}%")
+        table_data_cust['Target_Ret'] = table_data_cust['Target_Ret'].apply(lambda x: f"{x}%")
+        table_data_cust['Gap'] = table_data_cust['Gap'].apply(lambda x: f"{x:+.1f}%")
+        
+        pdf.create_table(
+            table_data_cust,
+            col_widths=[30, 50, 50, 50],
+            col_names=['Bulan', 'Actual Rate', 'Target Rate', 'Gap vs Target']
+        )
+    pdf.ln(10)
+
+    # 3. PRODUK & CLV (Tidak ada perubahan signifikan, tetap rapi)
+    pdf.add_page()
+    pdf.chapter_title('3. Top Produk & Pelanggan')
+
+    if not df_prod.empty:
+        # Chart Product
+        top_10 = df_prod.head(10).sort_values('total_revenue', ascending=True)
+        plt.figure(figsize=(10, 5))
+        bars = plt.barh(top_10['product_name'], top_10['total_revenue'], color='#1f77b4')
+        plt.title('Top 10 Produk (Revenue)')
+        plt.xlabel('Revenue ($)')
+        img_path = save_plot_to_image(plt.gcf())
+        pdf.image(img_path, x=10, w=180)
+        plt.close()
+        os.unlink(img_path)
+        pdf.ln(5)
+        
     if not df_clv.empty:
+        pdf.set_font('Arial', 'B', 12)
+        pdf.cell(0, 10, 'Top 5 Pelanggan (High Value)', 0, 1)
+        
         top_clv = df_clv.head(5).copy()
         top_clv['formatted_val'] = top_clv['monetary_value'].apply(lambda x: f"${x:,.0f}")
         table_data = top_clv[['company_name', 'frequency', 'formatted_val']]
         
         pdf.create_table(
             table_data, 
-            col_widths=[100, 30, 60], 
+            col_widths=[100, 30, 50], 
             col_names=['Nama Perusahaan', 'Order', 'Total Belanja']
-        )
-    pdf.ln(10)
-
-    # 3. PRODUK
-    pdf.add_page()
-    pdf.chapter_title('3. Performa Produk')
-
-    if not df_prod.empty:
-        top_10 = df_prod.head(10).sort_values('total_revenue', ascending=True)
-        
-        plt.figure(figsize=(10, 6))
-        bars = plt.barh(top_10['product_name'], top_10['total_revenue'], color='#1f77b4')
-        plt.title('Top 10 Produk (Revenue)')
-        plt.xlabel('Revenue ($)')
-        
-        img_path = save_plot_to_image(plt.gcf())
-        pdf.image(img_path, x=10, w=180)
-        plt.close()
-        os.unlink(img_path)
-        
-        pdf.ln(5)
-        
-        pdf.set_font('Arial', 'B', 12)
-        pdf.cell(0, 10, 'Detail Top 5 Produk', 0, 1)
-        
-        top_5_prod = df_prod.head(5).copy()
-        top_5_prod['rev_fmt'] = top_5_prod['total_revenue'].apply(lambda x: f"${x:,.0f}")
-        
-        pdf.create_table(
-            top_5_prod[['product_name', 'category_name', 'total_sold', 'rev_fmt']],
-            col_widths=[70, 40, 30, 50],
-            col_names=['Nama Produk', 'Kategori', 'Qty', 'Revenue']
         )
 
     return pdf.output(dest='S').encode('latin-1')
 
 # ==========================================
-# 5. DASHBOARD UTAMA
+# 7. DASHBOARD UTAMA
 # ==========================================
 def main():
     engine = get_dw_engine()
@@ -541,7 +643,6 @@ def main():
     st.sidebar.header("🎛️ Filter Dashboard")
     df_date, df_cat = get_dimensions(engine)
     
-    # 1. FILTER TAHUN
     if not df_date.empty:
         available_years = sorted(df_date['year'].unique().tolist(), reverse=True)
         sel_year = st.sidebar.selectbox("Pilih Tahun:", available_years, index=0)
@@ -549,7 +650,6 @@ def main():
         st.sidebar.warning("Data tahun tidak ditemukan.")
         st.stop()
 
-    # 2. FILTER KATEGORI
     if not df_cat.empty:
         opt_cat = df_cat['category_name'].unique().tolist()
         sel_cat = st.sidebar.multiselect("Filter Kategori:", opt_cat, default=opt_cat)
@@ -562,11 +662,30 @@ def main():
         
     category_sql = create_category_filter(sel_cat)
 
-    # --- MAIN CONTENT ---
-    st.title("🚀 Northwind Strategic Dashboard")
-    st.caption(f"Tahun Analisis: {sel_year} ")
+    # === TARGET SETTINGS (BARU!) ===
+    st.sidebar.markdown("---")
+    st.sidebar.header("🎯 Target Settings")
     
-    # Fetch Data
+    with st.sidebar.expander("Revenue Target", expanded=False):
+        monthly_revenue_target = st.number_input(
+            "Target Revenue Bulanan ($)",
+            min_value=0,
+            value=50000,
+            step=5000,
+            help="Target pendapatan per bulan"
+        )
+    
+    with st.sidebar.expander("Retention Target", expanded=False):
+        retention_target = st.slider(
+            "Target Retention Rate (%)",
+            min_value=0,
+            max_value=100,
+            value=70,
+            step=5,
+            help="Target persentase customer retention"
+        )
+
+    # --- FETCH DATA ---
     with st.spinner('Menghitung metrik KPI...'):
         df_trend = get_kpi_data(engine, 'financial_trend', sel_year, category_sql)
         df_retention = get_kpi_data(engine, 'retention_rate', sel_year, category_sql)
@@ -577,35 +696,40 @@ def main():
         df_rfm_raw = get_kpi_data(engine, 'rfm_raw_data', sel_year, category_sql)
         analysis_date = pd.Timestamp(year=sel_year, month=12, day=31)
         df_rfm_segmented = process_rfm_segmentation(df_rfm_raw, analysis_date)
-        df_retention = get_kpi_data(engine, 'retention_rate', sel_year, category_sql)
-        # 2. [TAMBAHAN] Ambil Data Retention Tahun Lalu untuk Perbandingan
         df_retention_prev = get_kpi_data(engine, 'retention_rate', sel_year - 1, category_sql)
 
-    # --- KPI SCORECARDS (UPDATED WITH AOV) ---
-    col1, col2, col3, col4 = st.columns(4) # <--- Sekarang ada 5 Kolom
+    # --- MAIN CONTENT ---
+    st.title("🚀 Northwind Strategic Dashboard")
+    st.caption(f"Tahun Analisis: {sel_year}")
+
+    # --- KPI SCORECARDS ---
+    col1, col2, col3, col4 = st.columns(4)
     
     total_revenue = df_trend['total_revenue'].sum() if not df_trend.empty else 0
-    
     avg_retention = df_retention['retention_rate'].mean() if not df_retention.empty else 0
     active_customers = len(df_clv) if not df_clv.empty else 0
     top_product = df_prod.iloc[0]['product_name'] if not df_prod.empty else "-"
-    avg_retention = df_retention['retention_rate'].mean() if not df_retention.empty else 0
-    # Rata-rata tahun lalu
     avg_retention_prev = df_retention_prev['retention_rate'].mean() if not df_retention_prev.empty else 0
-    # Hitung selisih (Delta)
     retention_delta = avg_retention - avg_retention_prev
-
     
-    col1.metric("💰 Total Revenue", f"${total_revenue:,.0f}", delta="Finance")
+    # Hitung Achievement
+    total_target = monthly_revenue_target * 12
+    revenue_achievement = calculate_achievement(total_revenue, total_target)
+    
+    col1.metric(
+        "💰 Total Revenue", 
+        f"${total_revenue:,.0f}",
+        delta=f"{revenue_achievement}% vs Target"
+    )
     col2.metric(
         "🔄 Avg Retention", 
         f"{avg_retention:.1f}%", 
-        delta=f"{retention_delta:+.1f}% vs Last Year" # Menampilkan selisih dengan tahun lalu
+        delta=f"{retention_delta:+.1f}% vs Last Year"
     )
     col3.metric("👥 Active Customers", f"{active_customers}", delta="Base")
     col4.metric("🏆 Top Product", top_product[:15]+"..." if len(top_product)>15 else top_product, delta="Leader")
-    
-    # --- AUTOMATED INSIGHTS ---
+
+    # --- INSIGHTS ---
     st.markdown("---")
     ins = generate_smart_insights(df_trend, df_retention, df_prod)
     
@@ -614,15 +738,11 @@ def main():
         
         with c1:
             if ins['finance']:
-                st.info(f"**{ins['finance']['title']}**\n\n"
-                        f"### {ins['finance']['value']}\n"
-                        f"{ins['finance']['detail']}")
+                st.info(f"**{ins['finance']['title']}**\n\n### {ins['finance']['value']}\n{ins['finance']['detail']}")
         
         with c2:
             if ins['customer']:
-                content = (f"**{ins['customer']['title']}**\n\n"
-                           f"### {ins['customer']['value']}\n"
-                           f"{ins['customer']['detail']}")
+                content = f"**{ins['customer']['title']}**\n\n### {ins['customer']['value']}\n{ins['customer']['detail']}"
                 if ins['customer']['status'] == 'error':
                     st.error(content, icon="📉")
                 elif ins['customer']['status'] == 'success':
@@ -634,53 +754,56 @@ def main():
             if ins['product']:
                 prod_name = ins['product']['value']
                 if len(prod_name) > 25: prod_name = prod_name[:25] + "..."
-                st.success(f"**{ins['product']['title']}**\n\n"
-                           f"### {prod_name}\n"
-                           f"{ins['product']['detail']}", icon="🏆")
+                st.success(f"**{ins['product']['title']}**\n\n### {prod_name}\n{ins['product']['detail']}", icon="🏆")
 
-    # --- TABS ANALYSIS ---
-    # Menambahkan Tab baru untuk Peta
+    # --- TABS ---
     tab1, tab2, tab3, tab4 = st.tabs(["📈 Strategi Keuangan", "🌍 Geografi Pasar", "🤝 Loyalitas Pelanggan", "📦 Efisiensi Produk"])
 
-    # TAB 1: FINANCIAL
+    # === TAB 1: FINANCIAL (UPDATED WITH TARGET) ===
     with tab1:
-        st.subheader(f"Tren Pendapatan Tahun {sel_year}")
-        col_a, col_b = st.columns([2, 1])
+        st.subheader(f"Analisis Keuangan & Target Pencapaian - {sel_year}")
         
-        with col_a:
-            if not df_trend.empty:
-                df_trend['period'] = df_trend['year'].astype(str) + '-' + df_trend['month'].astype(str).str.zfill(2)
-                
-                fig_trend = px.area(
-                    df_trend,
-                    x='period',
-                    y='total_revenue',
-                    title='Arus Kas Bulanan',
-                    labels={'period': 'Bulan', 'total_revenue': 'Revenue ($)'},
-                    markers=True
-                )
-                fig_trend.update_traces(line_color='#1f77b4', fillcolor='rgba(31, 119, 180, 0.3)')
-                st.plotly_chart(fig_trend, use_container_width=True)
-                
-        with col_b:
-            if not df_cat_perf.empty:
-                fig_pie = px.pie(
-                    df_cat_perf,
-                    names='category_name',
-                    values='total_revenue',
-                    title='Proporsi Kategori',
-                    hole=0.4
-                )
-                fig_pie.update_traces(textposition='inside', textinfo='percent+label')
-                st.plotly_chart(fig_pie, use_container_width=True)
+        # Chart Comparison
+        if not df_trend.empty:
+            fig_rev_comp = create_revenue_comparison_chart(df_trend, monthly_revenue_target)
+            st.plotly_chart(fig_rev_comp, use_container_width=True)
+            
+            col_sum1, col_sum2 = st.columns(2)
+            
+            with col_sum1:
+                if not df_cat_perf.empty:
+                    fig_pie = px.pie(
+                        df_cat_perf,
+                        names='category_name',
+                        values='total_revenue',
+                        title='Proporsi Revenue per Kategori',
+                        hole=0.4
+                    )
+                    fig_pie.update_traces(textposition='inside', textinfo='percent+label')
+                    st.plotly_chart(fig_pie, use_container_width=True)
+            
+            with col_sum2:
+                    st.markdown("##### 📊 Monthly Performance Summary")
+                    df_trend['achievement_pct'] = df_trend.apply(lambda row: calculate_achievement(row['total_revenue'], monthly_revenue_target), axis=1)
+                    display_df = df_trend[['month_name', 'total_revenue', 'target', 'achievement_pct']].copy()
+                    display_df.columns = ['Month', 'Actual ($)', 'Target ($)', 'Achievement (%)']
+                    
+                    st.dataframe(
+                        display_df.style.format({
+                            'Actual ($)': '${:,.0f}',
+                            'Target ($)': '${:,.0f}',
+                            'Achievement (%)': '{:.1f}%'
+                        }).background_gradient(cmap='RdYlGn', subset=['Achievement (%)']),
+                        use_container_width=True,
+                        hide_index=True
+                    )
 
-    # TAB 2: GEOGRAPHIC (NEW!)
+    # === TAB 2: GEOGRAPHIC ===
     with tab2:
         st.subheader("Sebaran Penjualan Global")
         st.markdown("Analisis pasar berdasarkan lokasi pelanggan untuk mengidentifikasi wilayah potensial.")
         
         if not df_geo.empty:
-            # 1. Peta Choropleth
             fig_map = px.choropleth(
                 df_geo,
                 locations="country",
@@ -688,74 +811,40 @@ def main():
                 color="total_revenue",
                 hover_name="country",
                 hover_data={"total_orders": True, "total_revenue": ":$.2f"},
-                color_continuous_scale="Viridis", 
+                color_continuous_scale="Viridis",
                 title=f"Distribusi Revenue per Negara ({sel_year})"
             )
             fig_map.update_geos(projection_type="natural earth")
             fig_map.update_layout(height=500, margin={"r":0,"t":50,"l":0,"b":0})
             st.plotly_chart(fig_map, use_container_width=True)
             
-            # 2. Tabel Detail Negara
             with st.expander("🌍 Lihat Data Detail Per Negara"):
                 st.dataframe(
                     df_geo.style.format({'total_revenue': '${:,.2f}'})
                     .background_gradient(cmap='Blues', subset=['total_revenue']),
                     use_container_width=True
                 )
-        else:
-            st.warning("Data geografis tidak tersedia.")
 
-# TAB 3: LOYALITAS (RFM SEGMENTATION - UPDATED)
+    # === TAB 3: CUSTOMER (UPDATED WITH TARGET & RFM) ===
     with tab3:
-        # 1. Retention & Growth (Bagian Atas)
-        st.subheader("Analisis Customer Retention")
-        st.info("""
-        ℹ️ **Formula Retention Rate:** `((Pelanggan Akhir - Pelanggan Baru) / Pelanggan Awal) × 100%`
+        st.subheader("Analisis Customer Retention & Target")
         
-        - **Retention Rate**: Persentase pelanggan lama yang tetap aktif
-        - **Churn Rate**: Persentase pelanggan yang hilang (100% - Retention)
-        """)
+        # Retention Comparison Chart
+        if not df_retention.empty:
+            fig_ret_comp, df_ret_target = create_retention_comparison_chart(df_retention, retention_target)
+            st.plotly_chart(fig_ret_comp, use_container_width=True)
+            
+            # Performance Summary
+            months_above_target = len(df_ret_target[df_ret_target['retention_rate'] >= retention_target])
+            avg_gap = df_ret_target['gap'].mean()
+            
+            col_ret1, col_ret2, col_ret3 = st.columns(3)
+            col_ret1.metric("Bulan di Atas Target", f"{months_above_target}/12")
+            col_ret2.metric("Avg Gap vs Target", f"{avg_gap:+.1f}%")
+            col_ret3.metric("Best Month", df_ret_target.loc[df_ret_target['retention_rate'].idxmax(), 'month'])
         
-        col_c, col_d = st.columns(2)
-        
-        with col_c:
-            st.markdown("##### 📊 Trend Retention Metrics")
-            if not df_retention.empty:
-                df_retention['period'] = df_retention['year'].astype(str) + '-' + df_retention['month'].astype(str).str.zfill(2)
-                
-                df_plot = df_retention.melt(
-                    id_vars=['period', 'month'],
-                    value_vars=['retention_rate', 'churn_rate'],
-                    var_name='Metric',
-                    value_name='Percentage'
-                )
-                
-                retention_colors = {'retention_rate': '#2ecc71', 'churn_rate': '#e74c3c'}
-                
-                fig_metrics = px.line(
-                    df_plot, x='period', y='Percentage', color='Metric',
-                    title='Metrik Kesehatan Pelanggan', markers=True,
-                    color_discrete_map=retention_colors
-                )
-                st.plotly_chart(fig_metrics, use_container_width=True)
-                
-        with col_d:
-            st.markdown("##### 💎 Top 10 High Value Customers")
-            if not df_clv.empty:
-                st.dataframe(
-                    df_clv.head(10)[['company_name', 'frequency', 'monetary_value']]
-                    .rename(columns={'company_name': 'Customer', 'monetary_value': 'Total Spend', 'frequency': 'Orders'})
-                    .style.format({'Total Spend': '${:,.0f}'})
-                    .background_gradient(cmap='Greens', subset=['Total Spend']),
-                    use_container_width=True,
-                    hide_index=True
-                )
-
-        # 2. RFM Analysis (Bagian Bawah - 5 Segmen)
         st.markdown("---")
-        st.subheader("Segmentasi Pelanggan")
-        
-        # --- [TAMBAHAN] PENJELASAN SEGMEN ---
+        st.subheader("Segmentasi Pelanggan (RFM Analysis)")
         with st.expander("ℹ️ Penjelasan Kategori Pelanggan (Klik untuk Membuka)"):
             st.markdown("""
             Pelanggan dikelompokkan berdasarkan **Recency** (hari sejak belanja terakhir) dan **Frequency** (jumlah transaksi):
@@ -767,6 +856,7 @@ def main():
             5.  💤 **Lost:** Pelanggan yang sudah lama tidak belanja dan frekuensi belanjanya rendah.
             """)
         
+        # CLV & RFM VISUALIZATION (RESTORED SEGMENTATION)
         if not df_rfm_segmented.empty:
             col_rfm1, col_rfm2 = st.columns(2)
             
@@ -776,22 +866,20 @@ def main():
                 'At Risk': '#fd7e14', 'Lost': '#dc3545'
             }
             
+            # 1. Bar Chart: Distribution
             with col_rfm1:
-                # Horizontal Bar Chart (Avg Spend)
-                rfm_avg_monetary = df_rfm_segmented.groupby('Segment')['monetary'].mean().reset_index()
-                rfm_avg_monetary.columns = ['Segment', 'Avg Spend']
-
-                fig_bar_avg = px.bar(
-                    rfm_avg_monetary, x='Avg Spend', y='Segment', orientation='h',
-                    color='Segment', color_discrete_map=rfm_colors,
-                    title='Rata-rata Nilai Transaksi per User ($)',
-                    text_auto='.2s'
-                )
-                fig_bar_avg.update_layout(yaxis={'categoryorder': 'total ascending'}, showlegend=False)
-                st.plotly_chart(fig_bar_avg, use_container_width=True)
+                segment_counts = df_rfm_segmented['Segment'].value_counts().reset_index()
+                segment_counts.columns = ['Segment', 'jumlah']
                 
+                fig_seg = px.bar(
+                    segment_counts, x='Segment', y='jumlah',
+                    color='Segment', color_discrete_map=rfm_colors,
+                    title='Distribusi Pelanggan per Segmen'
+                )
+                st.plotly_chart(fig_seg, use_container_width=True)
+
+            # 2. Scatter Plot: Recency vs Monetary
             with col_rfm2:
-                # Scatter Plot
                 fig_scatter = px.scatter(
                     df_rfm_segmented, x='recency', y='monetary', color='Segment',
                     size='frequency', hover_name='customer_name',
@@ -799,25 +887,18 @@ def main():
                     color_discrete_map=rfm_colors
                 )
                 st.plotly_chart(fig_scatter, use_container_width=True)
-            
-            st.markdown("### 📋 Daftar Target Pelanggan per Segmen")
-            
-            avail_seg = [s for s in list(rfm_colors.keys()) if s in df_rfm_segmented['Segment'].unique()]
-            sel_seg = st.selectbox("Filter Segmen:", avail_seg)
-            
-            data_show = df_rfm_segmented[df_rfm_segmented['Segment'] == sel_seg]
-            
-            # --- [ADJUSTMENT] TABEL DENGAN WARNA PADA RECENCY ---
-            st.dataframe(
-                data_show[['customer_name', 'last_order_date', 'recency', 'frequency', 'monetary']]
-                .sort_values('monetary', ascending=False)
-                .style.format({'monetary': '${:,.0f}'})
-                # cmap='Reds': Semakin tinggi recency (semakin lama tidak belanja), warna semakin merah gelap
-                .background_gradient(cmap='Reds', subset=['recency']),
-                use_container_width=True
-            )
 
-    # TAB 4: PRODUCT
+            # Data Table
+            with st.expander("📋 Lihat Detail Pelanggan per Segmen"):
+                st.dataframe(
+                    df_rfm_segmented[['customer_name', 'Segment', 'recency', 'frequency', 'monetary']]
+                    .sort_values('monetary', ascending=False)
+                    .style.format({'monetary': '${:,.0f}'})
+                    .background_gradient(cmap='Reds', subset=['recency']),
+                    use_container_width=True
+                )
+
+    # === TAB 4: PRODUCT ===
     with tab4:
         st.subheader("Profitabilitas Produk")
         if not df_prod.empty:
@@ -833,9 +914,10 @@ def main():
             fig_prod.update_layout(yaxis={'categoryorder': 'total ascending'})
             st.plotly_chart(fig_prod, use_container_width=True)
 
-    # --- DOWNLOAD BUTTON ---
+    # --- DOWNLOAD SECTION (RESTORED PDF) ---
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 🖨️ Ekspor Data")
+    
     if st.sidebar.button("📥 Unduh Laporan PDF"):
         with st.spinner("Membuat Laporan Lengkap..."):
             data_export = {
@@ -844,7 +926,8 @@ def main():
                 'clv': df_clv,
                 'product': df_prod
             }
-            pdf_bytes = generate_pdf(data_export, str(sel_year))
+            # Pass targets to PDF generator
+            pdf_bytes = generate_pdf(data_export, str(sel_year), monthly_revenue_target, retention_target)
             st.sidebar.download_button(
                 label="Klik untuk Download PDF",
                 data=pdf_bytes,
